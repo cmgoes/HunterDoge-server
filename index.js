@@ -1,6 +1,6 @@
 require('dotenv').config()
 
-const { GoogleSpreadsheet } = require('google-spreadsheet')
+const {GoogleSpreadsheet} = require('google-spreadsheet')
 const axios = require('axios');
 
 const doc = new GoogleSpreadsheet(process.env.APP_SPREADSHEET_ID)
@@ -11,10 +11,12 @@ class BitQueryFetchToGoogleSheet {
     BQ_URL = 'https://graphql.bitquery.io/'
     bnbPrice = 0
     start = 0
+
     run() {
-        this.start = (new Date).valueOf() 
+        this.start = (new Date).valueOf()
         this.getBNBCost(this.start);
     }
+
     getBNBCost(start) {
         const query = `
             {
@@ -39,14 +41,14 @@ class BitQueryFetchToGoogleSheet {
             url: this.BQ_URL,
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-KEY': 'BQYPmFV77w7X2svaoXx3UXLrSF2doQHV',
+                'X-API-KEY': 'BQY5mlmDJffK8raT64INp3RTSCC4FiWA',
             },
             data: JSON.stringify({
                 query
             })
-        }).then(({ data }) => {
+        }).then(({data}) => {
             console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
-
+            setTimeout(() => {console.log("10s Break")}, 100000);
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
             this.runService()
         }).catch((e) => {
@@ -54,23 +56,23 @@ class BitQueryFetchToGoogleSheet {
             console.log('Error to get price bnb')
         })
     }
+
     getTokenData(address, callback, time, prevData) {
         let secondCall = false
         let from = time
-        if(!time) {
+        if (!time) {
             time = new Date
             secondCall = true
             from = new Date('2020-01-01')
         }
 
         const query = `
-        {
-            ethereum(network: bsc) {
-                dexTrades(
+{
+                ethereum(network: bsc) {
+                  dexTrades(
                     options: {limit: 1, desc: "timeInterval.minute"}
                     baseCurrency: {is: "${address}"}
-                    time: {before: "${time.toISOString()}"}
-                ) {
+                  ) {
                     timeInterval {
                       minute(count: 1)
                     }
@@ -79,26 +81,18 @@ class BitQueryFetchToGoogleSheet {
                       address
                       name
                     }
+                    baseAmount
                     quoteCurrency {
                       symbol
                       address
                     }
+                    quoteAmount
+                    trades: count
                     quotePrice
                     median_price: quotePrice(calculate: median)
+                  }
                 }
-                transfers(
-                    currency: {is: "${address}"}
-                    amount: {gt: 0}
-                    date: {since: "${from.toISOString()}", till: "${(secondCall ? time : (new Date)).toISOString()}"}
-                ) {
-                    days: count(uniq: dates)
-                    sender_count: count(uniq: senders)
-                    receiver_count: count(uniq: receivers)
-                    min_date: minimum(of: date)
-                    max_date: maximum(of: date)
-                }
-            }
-        }
+              }
         `;
         axios({
             method: 'post',
@@ -110,17 +104,20 @@ class BitQueryFetchToGoogleSheet {
             data: JSON.stringify({
                 query
             })
-        }).then(({ data }) => {
-            if(secondCall) {
+        }).then(({data}) => {
+            if (secondCall) {
+                setTimeout(() => {console.log("10s Break")}, 100000);
                 this.getTokenData(address, callback, new Date(time.valueOf() - 86400000), data.data)
             } else {
-                if (callback)callback (prevData, data.data)
+                if (callback) callback(prevData, data.data)
             }
         }).catch((e) => {
             console.log(`Error to get price ${address}`)
+            setTimeout(() => {console.log("10s Break")}, 100000);
             if (callback) callback()
         })
     }
+
     async runService() {
         await doc.useServiceAccountAuth({
             client_email: process.env.APP_CLIENT_EMAIL,
@@ -144,23 +141,33 @@ class BitQueryFetchToGoogleSheet {
                 return true
             }
             this.getTokenData(item.Project_Address, (tokenData, prev24H) => {
-                if(tokenData) {
-                    let price24H,holder24H = 0
+                if (tokenData) {
+                    let price24H, holder24H = 0
 
                     try {
                         item.Project_Price = this.bnbPrice * tokenData.ethereum.dexTrades[0].quotePrice
-                    } catch(e){}
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    } catch (e) {
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    }
                     try {
                         price24H = this.bnbPrice * prev24H.ethereum.dexTrades[0].quotePrice
-                    } catch(e){
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    } catch (e) {
+                        setTimeout(() => {console.log("10s Break")}, 100000);
                         price24H = 0
                     }
                     try {
                         item.Project_Holder = tokenData.ethereum.transfers[0].receiver_count - tokenData.ethereum.transfers[0].sender_count
-                    } catch(e){}
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    } catch (e) {
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    }
                     try {
                         item.Project_HolderGrowth = prev24H.ethereum.transfers[0].receiver_count - prev24H.ethereum.transfers[0].sender_count
-                    } catch(e){
+                        setTimeout(() => {console.log("10s Break")}, 100000);
+                    } catch (e) {
+                        setTimeout(() => {console.log("10s Break")}, 100000);
                         holder24H = 0
                     }
                     item.Project_Price_24h = (item.Project_Price || 0) - price24H
@@ -177,9 +184,10 @@ class BitQueryFetchToGoogleSheet {
         execOne(data[0], 0)
     }
 }
+
 const instance = new BitQueryFetchToGoogleSheet;
 instance.run()
 const cron = require('node-cron')
-cron.schedule('0 * * * *', () => {
+cron.schedule('0 */1 * * *', () => {
     run()
 }); 
