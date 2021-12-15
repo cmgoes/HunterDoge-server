@@ -46,6 +46,7 @@ class BitQueryFetchToGoogleSheet {
             })
         }).then(({ data }) => {
             console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
+
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
             this.runService()
         }).catch((e) => {
@@ -181,4 +182,4 @@ instance.run()
 const cron = require('node-cron')
 cron.schedule('0 * * * *', () => {
     run()
-});
+}); 
