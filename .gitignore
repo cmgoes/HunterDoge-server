@@ -1,0 +1,8 @@
+package-lock.json
+build/
+.idea/
+node_modules/
+*/.DS_Store
+.DS_Store
+.lock
+.env
