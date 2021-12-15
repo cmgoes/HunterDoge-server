@@ -46,7 +46,6 @@ class BitQueryFetchToGoogleSheet {
             })
         }).then(({ data }) => {
             console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
-            await new Promise(r => setTimeout(r, 2000));
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
             this.runService()
         }).catch((e) => {
@@ -113,7 +112,6 @@ class BitQueryFetchToGoogleSheet {
         }).then(({ data }) => {
             if(secondCall) {
                 this.getTokenData(address, callback, new Date(time.valueOf() - 86400000), data.data)
-                await new Promise(r => setTimeout(r, 2000));
             } else {
                 if (callback)callback (prevData, data.data)
             }
