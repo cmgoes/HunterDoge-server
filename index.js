@@ -41,7 +41,7 @@ class BitQueryFetchToGoogleSheet {
             url: this.BQ_URL,
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-KEY': 'BQY5mlmDJffK8raT64INp3RTSCC4FiWA',
+                'X-API-KEY': `${process.env.APP_BTQUERY}`,
             },
             data: JSON.stringify({
                 query
@@ -49,9 +49,7 @@ class BitQueryFetchToGoogleSheet {
         }).then(({data}) => {
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
             console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
-            setTimeout(() => {
-                this.runService()
-            }, 100000);
+            this.runService()
         }).catch((e) => {
             console.log(e)
             console.log('Error to get price bnb')
@@ -100,7 +98,7 @@ class BitQueryFetchToGoogleSheet {
             url: this.BQ_URL,
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-KEY': 'BQYPmFV77w7X2svaoXx3UXLrSF2doQHV',
+                'X-API-KEY': `${process.env.APP_BTQUERY}`,
             },
             data: JSON.stringify({
                 query
@@ -115,6 +113,7 @@ class BitQueryFetchToGoogleSheet {
             }
         }).catch((e) => {
             console.log(`Error to get price ${address}`)
+            console.log(e)
             setTimeout(() => {
                 if (callback) callback()
             }, 100000);
@@ -145,7 +144,7 @@ class BitQueryFetchToGoogleSheet {
             }
             this.getTokenData(item.Project_Address, (tokenData, prev24H) => {
                 if (tokenData) {
-                    let price24H, holder24H = 0
+                    let price24H = 0
 
                     try {
                         item.Project_Price = this.bnbPrice * tokenData.ethereum.dexTrades[0].quotePrice
@@ -163,7 +162,6 @@ class BitQueryFetchToGoogleSheet {
                     try {
                         item.Project_HolderGrowth = prev24H.ethereum.transfers[0].receiver_count - prev24H.ethereum.transfers[0].sender_count
                     } catch (e) {
-                        holder24H = 0
                     }
                     item.Project_Price_24h = (item.Project_Price || 0) - price24H
                     item.save();
