@@ -47,10 +47,11 @@ class BitQueryFetchToGoogleSheet {
                 query
             })
         }).then(({data}) => {
-            console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
-            setTimeout(() => {console.log("10s Break")}, 100000);
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
-            this.runService()
+            console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
+            setTimeout(() => {
+                this.runService()
+            }, 100000);
         }).catch((e) => {
             console.log(e)
             console.log('Error to get price bnb')
