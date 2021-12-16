@@ -106,15 +106,17 @@ class BitQueryFetchToGoogleSheet {
             })
         }).then(({data}) => {
             if (secondCall) {
-                setTimeout(() => {console.log("10s Break")}, 100000);
-                this.getTokenData(address, callback, new Date(time.valueOf() - 86400000), data.data)
+                setTimeout(() => {
+                    this.getTokenData(address, callback, new Date(time.valueOf() - 86400000), data.data)
+                }, 100000);
             } else {
                 if (callback) callback(prevData, data.data)
             }
         }).catch((e) => {
             console.log(`Error to get price ${address}`)
-            setTimeout(() => {console.log("10s Break")}, 100000);
-            if (callback) callback()
+            setTimeout(() => {
+                if (callback) callback()
+            }, 100000);
         })
     }
 
@@ -146,28 +148,20 @@ class BitQueryFetchToGoogleSheet {
 
                     try {
                         item.Project_Price = this.bnbPrice * tokenData.ethereum.dexTrades[0].quotePrice
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     } catch (e) {
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     }
                     try {
                         price24H = this.bnbPrice * prev24H.ethereum.dexTrades[0].quotePrice
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     } catch (e) {
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                         price24H = 0
                     }
                     try {
                         item.Project_Holder = tokenData.ethereum.transfers[0].receiver_count - tokenData.ethereum.transfers[0].sender_count
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     } catch (e) {
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     }
                     try {
                         item.Project_HolderGrowth = prev24H.ethereum.transfers[0].receiver_count - prev24H.ethereum.transfers[0].sender_count
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                     } catch (e) {
-                        setTimeout(() => {console.log("10s Break")}, 100000);
                         holder24H = 0
                     }
                     item.Project_Price_24h = (item.Project_Price || 0) - price24H
@@ -176,7 +170,7 @@ class BitQueryFetchToGoogleSheet {
                 }
                 setTimeout(() => {
                     execOne(data[step], step)
-                }, 3000);
+                }, 10000);
             })
 
         }
