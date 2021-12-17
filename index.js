@@ -1,11 +1,11 @@
 require('dotenv').config()
 
-const {GoogleSpreadsheet} = require('google-spreadsheet')
+const { GoogleSpreadsheet } = require('google-spreadsheet')
 const axios = require('axios');
+const { bscBUSDContact, bscWBNBContact } = require('./contracts')
+const { getPair, getBalanceWBNB, getMCap } = require('./web3Api');
 
 const doc = new GoogleSpreadsheet(process.env.APP_SPREADSHEET_ID)
-const bscWBNBContact = '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c'
-const bscBUSDContact = '0xe9e7cea3dedca5984780bafc599bd69add087d56'
 
 class BitQueryFetchToGoogleSheet {
     BQ_URL = 'https://graphql.bitquery.io/'
@@ -46,7 +46,7 @@ class BitQueryFetchToGoogleSheet {
             data: JSON.stringify({
                 query
             })
-        }).then(({data}) => {
+        }).then(({ data }) => {
             this.bnbPrice = data.data.ethereum.dexTrades[0].quotePrice
             console.log(`Get BNB price in ${(new Date).valueOf() - start}ms`)
             this.runService()
@@ -66,7 +66,7 @@ class BitQueryFetchToGoogleSheet {
         }
 
         const query = `
-{
+            {
                 ethereum(network: bsc) {
                   dexTrades(
                     options: {limit: 1, desc: "timeInterval.minute"}
@@ -91,7 +91,7 @@ class BitQueryFetchToGoogleSheet {
                     median_price: quotePrice(calculate: median)
                   }
                 }
-              }
+            }
         `;
         axios({
             method: 'post',
@@ -103,7 +103,7 @@ class BitQueryFetchToGoogleSheet {
             data: JSON.stringify({
                 query
             })
-        }).then(({data}) => {
+        }).then(({ data }) => {
             if (secondCall) {
                 setTimeout(() => {
                     this.getTokenData(address, callback, new Date(time.valueOf() - 86400000), data.data)
@@ -134,7 +134,7 @@ class BitQueryFetchToGoogleSheet {
 
     fetchDataFromBitquery(data) {
         console.log(data.length)
-        const execOne = (item, step) => {
+        const execOne = async (item, step) => {
             console.log(step)
             if (step < data.length) {
                 step++;
@@ -142,12 +142,51 @@ class BitQueryFetchToGoogleSheet {
                 console.log(`Total finished in ${(new Date).valueOf() - this.start}ms`)
                 return true
             }
-            this.getTokenData(item.Project_Address, (tokenData, prev24H) => {
+            let pair, wbnb;
+            try {
+                pair = await getPair(item.Project_Address)
+            } catch (e) {
+                try {
+                    pair = await getPair(item.Project_Address)
+                } catch (e) {
+                    console.log('error get pair')
+                }
+            }
+            try {
+                wbnb = await getBalanceWBNB(pair)
+            } catch (e) {
+                try {
+                    wbnb = await getBalanceWBNB(pair)
+                } catch (e) {
+                    console.log('error get bnb balance in pair')
+                }
+            }
+            try {
+                let votes = await getVotesPerProject(item.Project_Price)
+                item.Project_Upvotes = votes[0]
+                item.Project_MedVotes = votes[1]
+                item.Project_Downvotes = votes[2]
+            } catch (e) {
+            }
+
+            this.getTokenData(item.Project_Address, async (tokenData, prev24H) => {
                 if (tokenData) {
                     let price24H = 0
 
                     try {
                         item.Project_Price = this.bnbPrice * tokenData.ethereum.dexTrades[0].quotePrice
+                        if (pair && wbnb) {
+                            let totalLP = wbnb * this.bnbPrice
+                            try {
+                                let mcap = await getMCap(item.Project_Address, item.Project_Price)
+                                if (mcap) {
+                                    item.Project_MarketCap = mcap
+                                    item.Project_LiqMcapRatio = totalLP / mcap * 100
+                                }
+                            } catch (e) {
+                                console.log('error get market cap')
+                            }
+                        }
                     } catch (e) {
                     }
                     try {
@@ -169,9 +208,8 @@ class BitQueryFetchToGoogleSheet {
                 }
                 setTimeout(() => {
                     execOne(data[step], step)
-                }, 10000);
+                }, 3000);
             })
-
         }
 
         execOne(data[0], 0)
@@ -180,7 +218,7 @@ class BitQueryFetchToGoogleSheet {
 
 const instance = new BitQueryFetchToGoogleSheet;
 instance.run()
-const cron = require('node-cron')
-cron.schedule('0 */1 * * *', () => {
-    run()
-}); 
+// const cron = require('node-cron')
+// cron.schedule('0 */1 * * *', () => {
+//     run()
+// }); 
