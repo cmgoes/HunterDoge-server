@@ -1,11 +1,22 @@
 require('dotenv').config()
 
+const { makeBatchRequest } = require('web3-batch-request');
+
 const { GoogleSpreadsheet } = require('google-spreadsheet')
 const axios = require('axios');
-const { bscBUSDContact, bscWBNBContact } = require('./contracts')
+const { bscFactorContact, bscProjectContact, bscBUSDContact, bscWBNBContact, networks } = require('./contracts')
+const ABIMAIN = require('./contracts/ABIMAIN.json')
+const PROJECTABI = require('./contracts/PROJECTABI.json')
+const REGISTERABI = require('./contracts/REGISTERABI.json')
+const ABIMCAP = require('./contracts/MCAP.json')
+const FACTORYABI = require('./contracts/FACTORYABI.json')
+const PAIRABI = require('./contracts/PAIRABI.json')
+const Web3 = require("web3")
 const { getPair, getBalanceWBNB, getMCap } = require('./web3Api');
 
 const doc = new GoogleSpreadsheet(process.env.APP_SPREADSHEET_ID)
+
+const web3 = new Web3(networks.bsc_main)
 
 class BitQueryFetchToGoogleSheet {
     BQ_URL = 'https://graphql.bitquery.io/'
@@ -139,34 +150,9 @@ class BitQueryFetchToGoogleSheet {
             if (step < data.length) {
                 step++;
             } else {
+                this.batchWeb3Request(data)
                 console.log(`Total finished in ${(new Date).valueOf() - this.start}ms`)
                 return true
-            }
-            let pair, wbnb;
-            try {
-                pair = await getPair(item.Project_Address)
-            } catch (e) {
-                try {
-                    pair = await getPair(item.Project_Address)
-                } catch (e) {
-                    console.log('error get pair')
-                }
-            }
-            try {
-                wbnb = await getBalanceWBNB(pair)
-            } catch (e) {
-                try {
-                    wbnb = await getBalanceWBNB(pair)
-                } catch (e) {
-                    console.log('error get bnb balance in pair')
-                }
-            }
-            try {
-                let votes = await getVotesPerProject(item.Project_Price)
-                item.Project_Upvotes = votes[0]
-                item.Project_MedVotes = votes[1]
-                item.Project_Downvotes = votes[2]
-            } catch (e) {
             }
 
             this.getTokenData(item.Project_Address, async (tokenData, prev24H) => {
@@ -175,18 +161,6 @@ class BitQueryFetchToGoogleSheet {
 
                     try {
                         item.Project_Price = this.bnbPrice * tokenData.ethereum.dexTrades[0].quotePrice
-                        if (pair && wbnb) {
-                            let totalLP = wbnb * this.bnbPrice
-                            try {
-                                let mcap = await getMCap(item.Project_Address, item.Project_Price)
-                                if (mcap) {
-                                    item.Project_MarketCap = mcap
-                                    item.Project_LiqMcapRatio = totalLP / mcap * 100
-                                }
-                            } catch (e) {
-                                console.log('error get market cap')
-                            }
-                        }
                     } catch (e) {
                     }
                     try {
@@ -213,12 +187,88 @@ class BitQueryFetchToGoogleSheet {
         }
 
         execOne(data[0], 0)
+
     }
+
+    async batchWeb3Request(data) {
+        let pairCalls = []
+        let isActiveCalls = []
+        let totalSpyCalls = []
+        let decimalsCalls = []
+        let votesCalls = []
+        data.map(e => {
+            pairCalls.push({
+                ethCall: new web3.eth.Contract(FACTORYABI, bscFactorContact).methods.getPair(bscWBNBContact, e.Project_Address).call,
+                onSuccess: result => console.log(`${e.Project_Address} ===pair===> ${result}`),
+                onError: () => { console.log(`get pair error of ${e.Project_Address}`) }
+            })
+            isActiveCalls.push({
+                ethCall: new web3.eth.Contract(PROJECTABI, bscProjectContact).methods.isActive(e.Project_Address).call,
+                onSuccess: result => console.log(`${e.Project_Address} ===status===> ${result}`),
+                onError: () => { console.log(`get active status error of ${e.Project_Address}`) }
+            })
+            totalSpyCalls.push({
+                ethCall: new web3.eth.Contract(ABIMCAP, e.Project_Address).methods.totalSupply().call,
+                onSuccess: result => console.log(`${e.Project_Address} ===mcap===> ${result}`),
+                onError: () => { console.log(`get market cap error of ${e.Project_Address}`) }
+            })
+            decimalsCalls.push({
+                ethCall: new web3.eth.Contract(ABIMCAP, e.Project_Address).methods.decimals().call,
+                onSuccess: result => console.log(`${e.Project_Address} ===mcap===> ${result}`),
+                onError: () => { console.log(`get market cap error of ${e.Project_Address}`) }
+            })
+            votesCalls.push({
+                ethCall: new web3.eth.Contract(PROJECTABI, bscProjectContact).methods.getVotesPerProject(e.Project_Address).call,
+                onSuccess: result => console.log(`${e.Project_Address} ===votes===> ${result}`),
+                onError: () => { console.log(`get bnb balance of ${e.Project_Address}`) }
+            })
+        })
+        const pairs = await makeBatchRequest(web3, pairCalls, { allowFailures: true, verbose: true })
+        const statusArray = await makeBatchRequest(web3, isActiveCalls, { allowFailures: true, verbose: true })
+        const totalSupplies = await makeBatchRequest(web3, totalSpyCalls, { allowFailures: true, verbose: true })
+        const decimals = await makeBatchRequest(web3, decimalsCalls, { allowFailures: true, verbose: true })
+        const votes = await makeBatchRequest(web3, votesCalls, { allowFailures: true, verbose: true })
+
+        let bnbBalanceCalls = []
+        let mcaps = []
+        data.map((token, i) => {
+            bnbBalanceCalls.push({
+                ethCall: new web3.eth.Contract(PAIRABI, bscWBNBContact).methods.balanceOf(pairs[i].value).call,
+                onSuccess: result => console.log(`${token.Project_Address} ===bnb===> ${result}`),
+                onError: () => { console.log(`get bnb balance of ${token.Project_Address}`) }
+            })
+            if (token.Project_Price) {
+                try {
+                    let price = token.Project_Price.replace ? token.Project_Price.replace(',', '.') : token.Project_Price
+                    mcaps.push((totalSupplies[i].value / 10 ** decimals[i].value) * price)
+                } catch (e) { }
+            }
+
+        })
+        const bnbBalances = await makeBatchRequest(web3, bnbBalanceCalls, { allowFailures: true, verbose: true })
+        data.map(async (item, i) => {
+            item.Project_MarketCap = mcaps[i]
+            try {
+                item.Project_Upvotes = votes[i].value[0]
+                item.Project_MedVotes = votes[i].value[1]
+                item.Project_Downvotes = votes[i].value[2]
+            } catch (e) { }
+            try {
+                item.Project_LiqMcapRatio = web3.utils.fromWei(bnbBalances[i].value, 'ether') * this.bnbPrice / mcaps[i] * 100;
+            } catch (e) { }
+            await new Promise(resolve => setTimeout(() => {
+                item.save();
+                resolve()
+            }, 3000));
+        })
+
+    }
+
 }
 
 const instance = new BitQueryFetchToGoogleSheet;
 instance.run()
-// const cron = require('node-cron')
-// cron.schedule('0 */1 * * *', () => {
-//     run()
-// }); 
+const cron = require('node-cron')
+cron.schedule('0 */1 * * *', () => {
+    run()
+}); 
