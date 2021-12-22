@@ -77,32 +77,44 @@ class BitQueryFetchToGoogleSheet {
         }
 
         const query = `
-            {
-                ethereum(network: bsc) {
-                  dexTrades(
-                    options: {limit: 1, desc: "timeInterval.minute"}
-                    baseCurrency: {is: "${address}"}
-                  ) {
-                    timeInterval {
-                      minute(count: 1)
-                    }
-                    baseCurrency {
-                      symbol
-                      address
-                      name
-                    }
-                    baseAmount
-                    quoteCurrency {
-                      symbol
-                      address
-                    }
-                    quoteAmount
-                    trades: count
-                    quotePrice
-                    median_price: quotePrice(calculate: median)
-                  }
+        {
+            ethereum(network: bsc) {
+              dexTrades(
+                options: {limit: 1, desc: "timeInterval.minute"}
+                baseCurrency: {is: "${address}"}
+                time: {before: "${time.toISOString()}"}
+              ) {
+                timeInterval {
+                  minute(count: 1)
                 }
+                baseCurrency {
+                  symbol
+                  address
+                  name
+                }
+                quoteCurrency {
+                  symbol
+                  address
+                }
+                quotePrice
+                median_price: quotePrice(calculate: median)
+                maximum(of: quote_price)
+                minimum(of: quote_price)
+              }
+              transfers(
+                currency: {is: "${address}"}
+                amount: {gt: 0}
+                date: {till: "${(secondCall ? time : new Date).toISOString()}", since: "${(secondCall ? from : time).toISOString()}"}
+              ) {
+                days: count(uniq: dates)
+                sender_count: count(uniq: senders)
+                receiver_count: count(uniq: receivers)
+                min_date: minimum(of: date)
+                max_date: maximum(of: date)
+              }
             }
+          }
+          
         `;
         axios({
             method: 'post',
@@ -139,7 +151,7 @@ class BitQueryFetchToGoogleSheet {
         await doc.loadInfo()
         const sheet = doc.sheetsById[process.env.APP_SHEET_ID]
         const rows = await sheet.getRows()
-
+        rows.reverse()
         this.fetchDataFromBitquery(rows)
     }
 
@@ -150,7 +162,7 @@ class BitQueryFetchToGoogleSheet {
             if (step < data.length) {
                 step++;
             } else {
-                this.batchWeb3Request(data)
+                await this.batchWeb3Request(data)
                 console.log(`Total finished in ${(new Date).valueOf() - this.start}ms`)
                 return true
             }
@@ -177,8 +189,10 @@ class BitQueryFetchToGoogleSheet {
                     } catch (e) {
                     }
                     item.Project_Price_24h = (item.Project_Price || 0) - price24H
-                    item.save();
-                    console.log(item.Project_Price, item.Project_Holder, item.Project_Price_24h, item.Project_HolderGrowth)
+                    try {
+                        item.save();
+                    } catch (e) { }
+                    console.log(item.Project_Price, price24H, item.Project_Holder, item.Project_Price_24h, item.Project_HolderGrowth)
                 }
                 setTimeout(() => {
                     execOne(data[step], step)
@@ -223,20 +237,34 @@ class BitQueryFetchToGoogleSheet {
                 onError: () => { console.log(`get bnb balance of ${e.Project_Address}`) }
             })
         })
-        const pairs = await makeBatchRequest(web3, pairCalls, { allowFailures: true, verbose: true })
-        const statusArray = await makeBatchRequest(web3, isActiveCalls, { allowFailures: true, verbose: true })
-        const totalSupplies = await makeBatchRequest(web3, totalSpyCalls, { allowFailures: true, verbose: true })
-        const decimals = await makeBatchRequest(web3, decimalsCalls, { allowFailures: true, verbose: true })
-        const votes = await makeBatchRequest(web3, votesCalls, { allowFailures: true, verbose: true })
+        let pairs = []
+        let totalSupplies = []
+        let decimals = []
+        let votes = []
+        try {
+            pairs = await makeBatchRequest(web3, pairCalls, { allowFailures: true, verbose: true })
+        } catch (e) { }
+        // const statusArray = await makeBatchRequest(web3, isActiveCalls, { allowFailures: true, verbose: true })
+        try {
+            totalSupplies = await makeBatchRequest(web3, totalSpyCalls, { allowFailures: true, verbose: true })
+        } catch (error) { }
+        try {
+            decimals = await makeBatchRequest(web3, decimalsCalls, { allowFailures: true, verbose: true })
+        } catch (error) { }
+        try {
+            votes = await makeBatchRequest(web3, votesCalls, { allowFailures: true, verbose: true })
+        } catch (error) { }
 
         let bnbBalanceCalls = []
         let mcaps = []
         data.map((token, i) => {
-            bnbBalanceCalls.push({
-                ethCall: new web3.eth.Contract(PAIRABI, bscWBNBContact).methods.balanceOf(pairs[i].value).call,
-                onSuccess: result => console.log(`${token.Project_Address} ===bnb===> ${result}`),
-                onError: () => { console.log(`get bnb balance of ${token.Project_Address}`) }
-            })
+            if (pairs[i]) {
+                bnbBalanceCalls.push({
+                    ethCall: new web3.eth.Contract(PAIRABI, bscWBNBContact).methods.balanceOf(pairs[i].value).call,
+                    onSuccess: result => console.log(`${token.Project_Address} ===bnb===> ${result}`),
+                    onError: () => { console.log(`get bnb balance of ${token.Project_Address}`) }
+                })
+            }
             if (token.Project_Price) {
                 try {
                     let price = token.Project_Price.replace ? token.Project_Price.replace(',', '.') : token.Project_Price
@@ -245,7 +273,10 @@ class BitQueryFetchToGoogleSheet {
             }
 
         })
-        const bnbBalances = await makeBatchRequest(web3, bnbBalanceCalls, { allowFailures: true, verbose: true })
+        let bnbBalances = []
+        try {
+            bnbBalances = await makeBatchRequest(web3, bnbBalanceCalls, { allowFailures: true, verbose: true })
+        } catch (error) { }
         data.map(async (item, i) => {
             item.Project_MarketCap = mcaps[i]
             try {
@@ -257,7 +288,11 @@ class BitQueryFetchToGoogleSheet {
                 item.Project_LiqMcapRatio = web3.utils.fromWei(bnbBalances[i].value, 'ether') * this.bnbPrice / mcaps[i] * 100;
             } catch (e) { }
             await new Promise(resolve => setTimeout(() => {
-                item.save();
+                try {
+                    item.save();
+                } catch (e) {
+                    console.log(`Save Error contract ${item.Project_Address}`)
+                }
                 resolve()
             }, 3000));
         })
@@ -270,5 +305,5 @@ const instance = new BitQueryFetchToGoogleSheet;
 instance.run()
 const cron = require('node-cron')
 cron.schedule('0 */1 * * *', () => {
-    run()
+    instance.run()
 }); 
