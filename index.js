@@ -188,7 +188,9 @@ class BitQueryFetchToGoogleSheet {
                         item.Project_HolderGrowth = prev24H.ethereum.transfers[0].receiver_count - prev24H.ethereum.transfers[0].sender_count
                     } catch (e) {
                     }
-                    item.Project_Price_24h = (item.Project_Price || 0) - price24H
+                    if (item.Project_Price) {
+                        item.Project_Price_24h = (item.Project_Price - price24H) / item.Project_Price * 100
+                    }
                     try {
                         item.save();
                     } catch (e) { }
