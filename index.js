@@ -22,10 +22,12 @@ class BitQueryFetchToGoogleSheet {
     BQ_URL = 'https://graphql.bitquery.io/'
     bnbPrice = 0
     start = 0
+    isProcessing = false
 
     run() {
         this.start = (new Date).valueOf()
         this.getBNBCost(this.start);
+        this.isProcessing = true
     }
 
     getBNBCost(start) {
@@ -151,7 +153,7 @@ class BitQueryFetchToGoogleSheet {
         await doc.loadInfo()
         const sheet = doc.sheetsById[process.env.APP_SHEET_ID]
         const rows = await sheet.getRows()
-        rows.reverse()
+        // rows.reverse()
         this.fetchDataFromBitquery(rows)
     }
 
@@ -203,7 +205,7 @@ class BitQueryFetchToGoogleSheet {
         }
 
         execOne(data[0], 0)
-
+        this.isProcessing = false
     }
 
     async batchWeb3Request(data) {
@@ -306,6 +308,8 @@ class BitQueryFetchToGoogleSheet {
 const instance = new BitQueryFetchToGoogleSheet;
 instance.run()
 const cron = require('node-cron')
-cron.schedule('0 */1 * * *', () => {
-    instance.run()
+cron.schedule('*/30 * * * *', () => {
+    if(!instance.isProcessing) {
+        instance.run()
+    }
 }); 
